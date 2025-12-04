@@ -8,51 +8,49 @@ const PDFDocument = require('pdfkit');
 const app = express();
 const port = 3000;
 
-// Configuração do Banco de Dados
 const pool = new Pool({
   user: 'postgres',
   host: 'localhost',
-  database: 'crud_ubuntu', // Nome do seu banco
-  password: '3666',        // <--- VERIFIQUE SUA SENHA AQUI
+  database: 'crud_ubuntu',
+  password: '3666',
   port: 5432,
 });
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public')); // Para servir o HTML depois
+app.use(express.static('public')); 
 
-// Rota 1: Cadastrar Usuário (Transação em 3 tabelas)
 app.post('/cadastrar', async (req, res) => {
   const client = await pool.connect();
   try {
     const { nome, email, senha, rua, bairro, cpf, rg, cnh } = req.body;
 
-    await client.query('BEGIN'); // Inicia a transação
+    await client.query('BEGIN');
 
-    // 1. Inserir Usuário
+    // Usuário
     const userRes = await client.query(
       'INSERT INTO usuarios (nome, email, senha) VALUES ($1, $2, $3) RETURNING id',
       [nome, email, senha]
     );
     const usuarioId = userRes.rows[0].id;
 
-    // 2. Inserir Endereço
+    // Endereço
     await client.query(
       'INSERT INTO enderecos (usuario_id, rua, bairro) VALUES ($1, $2, $3)',
       [usuarioId, rua, bairro]
     );
 
-    // 3. Inserir Documentos
+    // Documentos
     await client.query(
       'INSERT INTO documentos (usuario_id, cpf, rg, cnh) VALUES ($1, $2, $3, $4)',
       [usuarioId, cpf, rg, cnh]
     );
 
-    await client.query('COMMIT'); // Salva tudo se der certo
+    await client.query('COMMIT');
     res.json({ message: 'Cadastro realizado com sucesso!' });
 
   } catch (e) {
-    await client.query('ROLLBACK'); // Desfaz tudo se der erro
+    await client.query('ROLLBACK');
     console.error(e);
     res.status(500).json({ error: 'Erro ao cadastrar: ' + e.message });
   } finally {
@@ -60,7 +58,7 @@ app.post('/cadastrar', async (req, res) => {
   }
 });
 
-// Rota 2: Gerar CSV dos Endereços
+// CSV dos Endereços
 app.get('/gerar-csv', async (req, res) => {
   try {
     const result = await pool.query(`
@@ -84,7 +82,7 @@ app.get('/gerar-csv', async (req, res) => {
   }
 });
 
-// Rota 3: Gerar JSON dos Documentos
+// JSON dos Documentos
 app.get('/gerar-json', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM documentos');
@@ -97,7 +95,7 @@ app.get('/gerar-json', async (req, res) => {
   }
 });
 
-// Rota 4: Exportar Nomes em PDF
+// Exportar Nomes em PDF
 app.get('/gerar-pdf', async (req, res) => {
   try {
     const result = await pool.query('SELECT nome FROM usuarios');
