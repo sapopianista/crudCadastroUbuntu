@@ -58,7 +58,7 @@ app.post('/cadastrar', async (req, res) => {
   }
 });
 
-// CSV dos Endereços
+// Gerar CSV dos Endereços e baixar
 app.get('/gerar-csv', async (req, res) => {
   try {
     const result = await pool.query(`
@@ -66,8 +66,9 @@ app.get('/gerar-csv', async (req, res) => {
       FROM enderecos e JOIN usuarios u ON e.usuario_id = u.id
     `);
     
+    const filePath = __dirname + '/enderecos_usuarios.csv';
     const csvWriter = createCsvWriter({
-      path: 'enderecos_usuarios.csv',
+      path: filePath,
       header: [
         {id: 'nome', title: 'NOME'},
         {id: 'rua', title: 'RUA'},
@@ -76,32 +77,37 @@ app.get('/gerar-csv', async (req, res) => {
     });
 
     await csvWriter.writeRecords(result.rows);
-    res.json({ message: 'Arquivo enderecos_usuarios.csv criado na pasta do projeto!' });
+    res.download(filePath, 'enderecos_usuarios.csv'); 
+    
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).send("Erro ao gerar CSV: " + err.message);
   }
 });
 
-// JSON dos Documentos
+// Gerar JSON dos Documentos e Baixar
 app.get('/gerar-json', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM documentos');
     const dados = JSON.stringify(result.rows, null, 2);
+    const filePath = __dirname + '/documentos.json';
     
-    fs.writeFileSync('documentos.json', dados);
-    res.json({ message: 'Arquivo documentos.json criado na pasta do projeto!' });
+    fs.writeFileSync(filePath, dados);
+    res.download(filePath, 'documentos.json');
+
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).send("Erro ao gerar JSON: " + err.message);
   }
 });
 
-// Exportar Nomes em PDF
+// Exportar Nomes em PDF e Baixar
 app.get('/gerar-pdf', async (req, res) => {
   try {
     const result = await pool.query('SELECT nome FROM usuarios');
+    const filePath = __dirname + '/lista_nomes.pdf';
     
     const doc = new PDFDocument();
-    doc.pipe(fs.createWriteStream('lista_nomes.pdf'));
+    const stream = fs.createWriteStream(filePath);
+    doc.pipe(stream);
     
     doc.fontSize(20).text('Lista de Usuários Cadastrados', { align: 'center' });
     doc.moveDown();
@@ -111,7 +117,74 @@ app.get('/gerar-pdf', async (req, res) => {
     });
     
     doc.end();
-    res.json({ message: 'Arquivo lista_nomes.pdf criado na pasta do projeto!' });
+
+    stream.on('finish', function() {
+       res.download(filePath, 'lista_nomes.pdf');
+    });
+
+  } catch (err) {
+    res.status(500).send("Erro ao gerar PDF: " + err.message);
+  }
+});
+
+// Listar todos os usuários
+app.get('/usuarios', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT u.id, u.nome, u.email, u.senha, 
+             e.rua, e.bairro, 
+             d.cpf, d.rg, d.cnh 
+      FROM usuarios u 
+      JOIN enderecos e ON u.id = e.usuario_id 
+      JOIN documentos d ON u.id = d.usuario_id
+      ORDER BY u.id ASC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Editar Usuário
+app.put('/usuarios/:id', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+    const { nome, email, senha, rua, bairro, cpf, rg, cnh } = req.body;
+
+    await client.query('BEGIN');
+
+    await client.query(
+      'UPDATE usuarios SET nome=$1, email=$2, senha=$3 WHERE id=$4',
+      [nome, email, senha, id]
+    );
+
+    await client.query(
+      'UPDATE enderecos SET rua=$1, bairro=$2 WHERE usuario_id=$3',
+      [rua, bairro, id]
+    );
+
+    await client.query(
+      'UPDATE documentos SET cpf=$1, rg=$2, cnh=$3 WHERE usuario_id=$4',
+      [cpf, rg, cnh, id]
+    );
+
+    await client.query('COMMIT');
+    res.json({ message: 'Usuário atualizado com sucesso!' });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: 'Erro ao atualizar: ' + e.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Excluir Usuário
+app.delete('/usuarios/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await pool.query('DELETE FROM usuarios WHERE id = $1', [id]);
+    res.json({ message: 'Usuário excluído com sucesso!' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
