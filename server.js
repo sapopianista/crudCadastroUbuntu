@@ -13,7 +13,7 @@ const pool = new Pool({
   user: 'postgres',
   host: 'localhost',
   database: 'crud_ubuntu', // Nome do seu banco
-  password: '1234',        // <--- VERIFIQUE SUA SENHA AQUI
+  password: '3666',        // <--- VERIFIQUE SUA SENHA AQUI
   port: 5432,
 });
 
